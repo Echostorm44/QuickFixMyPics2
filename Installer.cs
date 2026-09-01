@@ -10,9 +10,10 @@ namespace QuickFixMyPics2;
 /// added for each supported image type. Everything it writes is recorded in the install manifest, so the
 /// bundled uninstaller removes it completely — files, shortcuts, the context-menu verbs, and the A/R/P entry.
 /// </summary>
+// Must be PUBLIC: `cascade package --installer` discovers it by the public modifier and the
+// generated wizard instantiates it (new QuickFixMyPicsInstaller()) from a separate assembly.
 [Installer]
-#pragma warning disable CA1812 // instantiated via reflection by the cascade package command
-internal sealed class QuickFixMyPicsInstaller : CascadeInstaller
+public sealed class QuickFixMyPicsInstaller : CascadeInstaller
 {
     /// <summary>
     /// The image types we accept as input — each gets the right-click "Convert…" verb via a
@@ -71,4 +72,3 @@ internal sealed class QuickFixMyPicsInstaller : CascadeInstaller
         return v is null ? "1.0.0" : $"{v.Major}.{v.Minor}.{v.Build}";
     }
 }
-#pragma warning restore CA1812
