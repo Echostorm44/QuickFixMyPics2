@@ -36,7 +36,11 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          # Pinned to the exact SDK that packages cleanly. `cascade package` publishes the app
+          # then rebuilds it as a ProjectReference from the AOT wizard into the same obj; some
+          # 10.0.3xx patches re-add the generated AssemblyInfo on that second compile (CS0579
+          # duplicate attributes). 10.0.303 does not. Bump deliberately after verifying a package.
+          dotnet-version: '10.0.303'
 
       - name: Derive version from tag
         id: ver

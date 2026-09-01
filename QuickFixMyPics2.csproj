@@ -13,7 +13,14 @@
     <!-- The exe / taskbar icon. -->
     <ApplicationIcon>Assets\appIcon.ico</ApplicationIcon>
 
-    <PublishAot Condition="'$(Configuration)' == 'Release'">true</PublishAot>
+    <!-- AOT is opt-in (-p:EnableAot=true), NOT unconditional in Release. The app SHIPS
+         framework-dependent: the cascade installer packager publishes it with PublishAot=false,
+         then builds it AGAIN as a ProjectReference from the AOT wizard. If this project forced
+         PublishAot=true in Release, those two compiles into the same obj disagree on the AOT
+         flavor and the SDK re-adds the generated AssemblyInfo to the compile list, a CS0579
+         duplicate-attribute build break on CI. The code stays AOT-compatible (IsAotCompatible),
+         so a standalone AOT exe is still: dotnet publish -c Release -p:EnableAot=true. -->
+    <PublishAot Condition="'$(Configuration)' == 'Release' and '$(EnableAot)' == 'true'">true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
     <StripSymbols>true</StripSymbols>
   </PropertyGroup>
