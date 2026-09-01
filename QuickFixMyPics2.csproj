@@ -10,6 +10,14 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsAotCompatible>true</IsAotCompatible>
 
+    <!-- The cascade installer packager stages generated helper projects (wizard, uninstaller,
+         launcher, update shim) under a "<output>-build" scratch dir. When the output dir lives
+         inside the repo (e.g. output "dist"), those projects' generated .cs (AssemblyInfo,
+         Program.cs) fall under this app's default globbing and get double-compiled, a CS0579
+         duplicate assembly-attributes break. Exclude the packager's output and scratch dirs so
+         packaging works from the repo root on any machine or CI regardless of the output name. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);dist/**;dist-build/**</DefaultItemExcludes>
+
     <!-- The exe / taskbar icon. -->
     <ApplicationIcon>Assets\appIcon.ico</ApplicationIcon>
 
