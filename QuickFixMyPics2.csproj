@@ -33,7 +33,7 @@
     <!-- Consume Cascade.UI as a real external dev would: the published NuGet package,
          not the source. SharpImage + Etch (with native binaries) + the generator/analyzers
          + the .targets (DPI manifest, fonts) all flow in through the package. -->
-    <PackageReference Include="Echostorm.Cascade.UI" Version="0.1.0-alpha.22" />
+    <PackageReference Include="Echostorm.Cascade.UI" Version="0.1.0-alpha.23" />
   </ItemGroup>
 
 </Project>
