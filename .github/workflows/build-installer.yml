@@ -65,6 +65,27 @@ jobs:
           }
           Get-ChildItem dist
 
+      - name: Build update package + manifest
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # required even for --dry-run's token pre-check
+        run: |
+          $ver = "${{ steps.ver.outputs.version }}"
+          # The auto-updater downloads a full package (the app's own publish output) and swaps it
+          # into the install dir. Publish the SAME self-contained native-AOT build the installer
+          # ships, zip it, and generate the update manifest.json (+ deltas vs the prior release).
+          dotnet publish QuickFixMyPics2.csproj -c Release -r win-x64 --self-contained -p:PublishAot=true -p:DebugType=none -p:DebugSymbols=false -o app-publish
+          $zip = "dist/QuickFixMyPics2-$ver-win-x64.zip"
+          if (Test-Path $zip) { Remove-Item $zip }
+          Compress-Archive -Path app-publish/* -DestinationPath $zip
+          # --dry-run generates dist/manifest.json (+ deltas) WITHOUT creating its own release;
+          # the Publish step below uploads them to the single release for this tag.
+          cascade publish --github Echostorm44/QuickFixMyPics2 --update-manifest --dry-run `
+            --app-id 01F8E2F6-62F4-45C9-9D72-36EE16623EBB `
+            --version $ver --rid win-x64 --package $zip --dist dist
+          if (-not (Test-Path 'dist/manifest.json')) { Write-Error 'manifest.json was not generated.'; exit 1 }
+          Get-ChildItem dist
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -78,6 +99,8 @@ jobs:
         with:
           name: Quick Fix My Pics ${{ steps.ver.outputs.version }}
           tag_name: ${{ github.ref_name }}
-          files: dist/QuickFixMyPics2-Setup.exe
+          # Setup.exe (new installs) + manifest.json/package/deltas (in-app auto-update).
+          # manifest.json is served at releases/latest/download/manifest.json — the app's check URL.
+          files: dist/*
           fail_on_unmatched_files: true
           generate_release_notes: true

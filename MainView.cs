@@ -44,6 +44,13 @@ internal sealed class MainView : Component
         // Drain files supplied on the command line, then listen for live sources.
         AddFiles(FileIntake.TakePending());
         FileIntake.FilesReceived += OnFilesReceived;
+
+        // The window is constructing — this launch reached a healthy state, so defuse the
+        // updater's crash-rollback for the (possibly just-applied) version.
+        if (Cascade.UI.Installer.Update.Updater.IsConfigured)
+        {
+            Cascade.UI.Installer.Update.Updater.MarkHealthy();
+        }
     }
 
     private void OnFilesReceived(IReadOnlyList<string> paths)
