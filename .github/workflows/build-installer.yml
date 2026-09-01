@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# build-installer.yml — build the Quick Fix My Pics setup exe and attach it to a
+# GitHub Release. Triggered by pushing a version tag (v*).
+#
+# The app is a Cascade UI app, so the installer is produced by the `cascade`
+# CLI (Echostorm.Cascade.UI.Tools): `cascade package --installer` reflects the
+# [Installer] class (QuickFixMyPicsInstaller), publishes the app, and packs a
+# single self-contained setup launcher that carries the themed wizard + a tiny
+# manifest-driven uninstaller. The per-extension right-click "Convert with Quick
+# Fix My Pics" verbs come from the app's own Cascade.UI dependency (the wizard
+# references this project), so no tool feature flag is needed.
+#
+# The tag version flows into the build via the MSBuild `Version` property (set as
+# an environment variable — MSBuild reads env vars as global properties), so the
+# app assembly, the setup's Add/Remove Programs entry, and upgrade detection all
+# report the released version.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Build Installer
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}   # manual build (no Release published unless run from a tag)
+
+permissions:
+  contents: write          # create the GitHub Release + upload the setup exe
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Derive version from tag
+        id: ver
+        shell: pwsh
+        run: |
+          $ref = "${{ github.ref_name }}"
+          if ($ref -match '^v(.+)$') { $v = $Matches[1] } else { $v = '0.0.0-dev' }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          # Expose as an MSBuild property (env vars are read by MSBuild as global properties),
+          # so the inner `dotnet publish` of the app stamps this version into the assembly.
+          "Version=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Building version $v"
+
+      - name: Install cascade CLI
+        shell: pwsh
+        run: |
+          dotnet tool install --global Echostorm.Cascade.UI.Tools --prerelease
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          cascade package --installer --project QuickFixMyPics2.csproj --configuration Release --output dist
+          if (-not (Test-Path 'dist/QuickFixMyPics2-Setup.exe')) {
+            Write-Error 'Setup exe was not produced.'; exit 1
+          }
+          Get-ChildItem dist
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickFixMyPics2-Setup
+          path: dist/QuickFixMyPics2-Setup.exe
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Quick Fix My Pics ${{ steps.ver.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          files: dist/QuickFixMyPics2-Setup.exe
+          fail_on_unmatched_files: true
+          generate_release_notes: true
