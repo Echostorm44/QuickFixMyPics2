@@ -1,4 +1,5 @@
 using Cascade.UI;
+using Updater = Cascade.UI.Installer.Update.Updater;
 using IOPath = System.IO.Path;
 
 namespace QuickFixMyPics2;
@@ -39,17 +40,64 @@ internal sealed class MainView : Component
     private bool converting;
     private string status = "";
 
+    // ── Update state ──────────────────────────────────────────────────
+    private string? updateVersion;   // non-null when a newer version is available
+    private string updateStatus = ""; // shown while downloading/applying
+    private bool updateBusy;          // downloading or applying — disables the buttons
+
     public MainView()
     {
         // Drain files supplied on the command line, then listen for live sources.
         AddFiles(FileIntake.TakePending());
         FileIntake.FilesReceived += OnFilesReceived;
 
-        // The window is constructing — this launch reached a healthy state, so defuse the
-        // updater's crash-rollback for the (possibly just-applied) version.
-        if (Cascade.UI.Installer.Update.Updater.IsConfigured)
+        if (Updater.IsConfigured)
         {
-            Cascade.UI.Installer.Update.Updater.MarkHealthy();
+            // This launch reached a healthy state — defuse the updater's crash-rollback for the
+            // (possibly just-applied) version.
+            Updater.MarkHealthy();
+
+            // Check for a newer version in the background; if there is one, we ASK before doing
+            // anything (see the banner in Render) — nothing is downloaded or applied silently.
+            _ = CheckForUpdateAsync();
+        }
+    }
+
+    private async Task CheckForUpdateAsync()
+    {
+        try
+        {
+            var result = await Task.Run(() => Updater.CheckNowAsync());
+            if (result.IsAvailable && result.Version is { Length: > 0 })
+            {
+                Dispatcher.Post(() => { updateVersion = result.Version; Invalidate(); });
+            }
+        }
+        catch
+        {
+            // A failed update check is invisible to the user.
+        }
+    }
+
+    private async Task DownloadAndApplyAsync()
+    {
+        updateBusy = true;
+        updateStatus = "Downloading update…";
+        Invalidate();
+        try
+        {
+            await Task.Run(() => Updater.DownloadAsync());
+            updateStatus = "Restarting to apply…";
+            Invalidate();
+            // Hands off to the cascade-update shim: it waits for this process to exit, swaps in the
+            // new version, and relaunches. So this call ends the app.
+            Updater.ApplyAndRestart();
+        }
+        catch
+        {
+            updateBusy = false;
+            updateStatus = "Update failed — please try again later.";
+            Invalidate();
         }
     }
 
@@ -73,12 +121,57 @@ internal sealed class MainView : Component
 
     // ── Render ────────────────────────────────────────────────────────
 
-    protected override Node Render() =>
-        new Column(
-            spacing: 20,
-            children: [FileArea().Expand(), OptionsPanel(), ActionArea(),])
-        .Padding(EdgeInsets.All(28))
-        .Background(new ColorValue("#000000"));
+    protected override Node Render()
+    {
+        var children = new List<Node>();
+        if (updateVersion is not null)
+        {
+            children.Add(UpdateBanner());
+        }
+        children.Add(FileArea().Expand());
+        children.Add(OptionsPanel());
+        children.Add(ActionArea());
+
+        return new Column(spacing: 20, children: [.. children])
+            .Padding(EdgeInsets.All(28))
+            .Background(new ColorValue("#000000"));
+    }
+
+    // Lucide "arrow-down-to-line" — the update affordance.
+    private static readonly Icon UpdateIcon = new(["M12 17V3", "m6 11 6 6 6-6", "M19 21H5"], new Size(24, 24), 20f, "Update");
+
+    /// <summary>An in-app banner shown when a newer version is available — asks before doing anything.</summary>
+    private Node UpdateBanner()
+    {
+        Node[] right = updateBusy
+            ? new Node[] { new Label(updateStatus).FontSize(13).Color(TextPrimary) }
+            : new Node[]
+            {
+                new Button("Update now", () => _ = DownloadAndApplyAsync()).Height(34),
+                new Button("Later", () => { updateVersion = null; Invalidate(); }).Variant("ghost").Height(34),
+            };
+
+        return new Row(
+            spacing: 12,
+            crossAxisAlignment: CrossAxisAlignment.Center,
+            children:
+            [
+                new IconView(UpdateIcon, size: 22).Color(TextPrimary),
+                new Column(
+                    spacing: 2,
+                    crossAxisAlignment: CrossAxisAlignment.Start,
+                    children:
+                    [
+                        new Label($"Version {updateVersion} is available").FontSize(14).Color(TextPrimary),
+                        new Label(updateBusy ? "" : "Update now to get the latest fixes and features.")
+                            .FontSize(12).Color(new ColorValue("#D6E9FF")).MaxLines(1).Overflow(TextOverflow.Ellipsis),
+                    ]).Expand(),
+                .. right,
+            ])
+            .Padding(EdgeInsets.Symmetric(horizontal: 16, vertical: 12))
+            .Background(Accent)
+            .CornerRadius(12);
+    }
 
     // ── File area: drop zone (empty) or file list ─────────────────────
 
