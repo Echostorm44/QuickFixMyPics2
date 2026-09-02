@@ -192,7 +192,7 @@ internal sealed class MainView : Component
             Invalidate();
         }),
                 "Resize",
-                "Fit within a maximum size — aspect ratio is always locked"),
+                "Scale to fit these dimensions, up or down — aspect ratio is always locked"),
         };
 
         if (resize)
@@ -200,7 +200,7 @@ internal sealed class MainView : Component
             children.Add(new Row(
                 spacing: 10,
                 crossAxisAlignment: CrossAxisAlignment.Center,
-                children: [ new Label("Max size").FontSize(14).Color(TextSecondary).Expand(), new NumberInput<int>(
+                children: [ new Label("Fit size").FontSize(14).Color(TextSecondary).Expand(), new NumberInput<int>(
                         Bind(maxWidth, v => maxWidth = v),
                         min: 1, max: 20000, step: 1, format: "0").Width(90), new Label("×").FontSize(14).Color(TextSecondary), new NumberInput<int>(
                         Bind(maxHeight, v => maxHeight = v),

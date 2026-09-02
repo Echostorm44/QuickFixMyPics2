@@ -121,7 +121,8 @@ internal static partial class ImageConversion
 
             if (options.Resize)
             {
-                (targetW, targetH) = FitWithin(targetW, targetH, options.MaxWidth, options.MaxHeight);
+                // Resize scales up as well as down, so the user can enlarge small images too.
+                (targetW, targetH) = FitWithin(targetW, targetH, options.MaxWidth, options.MaxHeight, allowUpscale: true);
             }
 
             if (options.Format == OutputFormat.Ico)
@@ -175,11 +176,14 @@ internal static partial class ImageConversion
     }
 
     /// <summary>
-    /// Scales (origW, origH) to fit within (maxW, maxH) while preserving aspect
-    /// ratio. Only shrinks — an image already inside the box is returned unchanged.
+    /// Scales (origW, origH) to fit within (maxW, maxH) while preserving aspect ratio.
+    /// With <paramref name="allowUpscale"/> false (the default) it only shrinks — an image already
+    /// inside the box is returned unchanged (a "fit within a maximum" cap, e.g. the 256px ICO clamp).
+    /// With <paramref name="allowUpscale"/> true it scales up *or* down so the image fills the box as
+    /// large as possible (the Resize option, which lets the user enlarge as well as shrink).
     /// Each dimension is at least 1px.
     /// </summary>
-    public static (int Width, int Height) FitWithin(int origW, int origH, int maxW, int maxH)
+    public static (int Width, int Height) FitWithin(int origW, int origH, int maxW, int maxH, bool allowUpscale = false)
     {
         if (origW <= 0 || origH <= 0)
         {
@@ -187,9 +191,9 @@ internal static partial class ImageConversion
         }
 
         double scale = Math.Min((double)maxW / origW, (double)maxH / origH);
-        if (scale >= 1.0)
+        if (!allowUpscale && scale >= 1.0)
         {
-            return (origW, origH); // already fits — don't upscale
+            return (origW, origH); // already fits — cap only, don't upscale
         }
 
         int w = Math.Max(1, (int)Math.Round(origW * scale));
