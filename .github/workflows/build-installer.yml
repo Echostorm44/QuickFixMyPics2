@@ -57,12 +57,12 @@ jobs:
       - name: Azure login (OIDC)
         uses: azure/login@v2
         with:
-          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          # The signing service principal is scoped to the Trusted Signing account, not a
-          # subscription, so azure/login's default subscription lookup ("No subscriptions found")
-          # must be skipped. The token is still valid for the signing endpoint.
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          # No subscription-id: the signing service principal is scoped to the Trusted Signing
+          # ACCOUNT (role "Trusted Signing Certificate Profile Signer"), not a subscription, so
+          # passing/selecting one fails ("subscription doesn't exist"). allow-no-subscriptions lets
+          # login succeed with just an Entra token, which is all the signing endpoint needs.
           allow-no-subscriptions: true
 
       - name: Install Trusted Signing dlib + locate signtool
