@@ -1,19 +1,15 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# build-installer.yml — build the Quick Fix My Pics setup exe and attach it to a
+# build-installer.yml — build the Quick Fix My Pics setup exe, sign every exe with
+# Azure Trusted Signing, and attach it (+ the auto-update manifest/package) to a
 # GitHub Release. Triggered by pushing a version tag (v*).
 #
-# The app is a Cascade UI app, so the installer is produced by the `cascade`
-# CLI (Echostorm.Cascade.UI.Tools): `cascade package --installer` reflects the
-# [Installer] class (QuickFixMyPicsInstaller), publishes the app, and packs a
-# single self-contained setup launcher that carries the themed wizard + a tiny
-# manifest-driven uninstaller. The per-extension right-click "Convert with Quick
-# Fix My Pics" verbs come from the app's own Cascade.UI dependency (the wizard
-# references this project), so no tool feature flag is needed.
+# `cascade package --installer` builds the app, update shim, wizard, uninstaller and
+# the single-file setup launcher, and — given the --sign-azure-* flags — signs EVERY
+# one of those exes via signtool + the Trusted Signing dlib. The update package's app
+# exe is signed separately (it's published outside the packager). Auth is OIDC:
+# azure/login federates GitHub's id-token to the signing service — no secrets/pfx.
 #
-# The tag version flows into the build via the MSBuild `Version` property (set as
-# an environment variable — MSBuild reads env vars as global properties), so the
-# app assembly, the setup's Add/Remove Programs entry, and upgrade detection all
-# report the released version.
+# The tag version flows into the build via the MSBuild `Version` property (env var).
 # ─────────────────────────────────────────────────────────────────────────────
 name: Build Installer
 
@@ -21,14 +17,24 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch: {}   # manual build (no Release published unless run from a tag)
+  workflow_dispatch: {}
 
 permissions:
-  contents: write          # create the GitHub Release + upload the setup exe
+  contents: write          # create the GitHub Release + upload assets
+  id-token: write          # OIDC token for Azure Trusted Signing (azure/login)
+
+env:
+  SIGN_ENDPOINT: https://eus.codesigning.azure.net/
+  SIGN_ACCOUNT: AdamMarciniec
+  SIGN_PROFILE: AdamMarciniec
+  SIGN_TIMESTAMP: http://timestamp.acs.microsoft.com
 
 jobs:
   installer:
     runs-on: windows-latest
+    # The Azure federated credential is scoped to this environment
+    # (subject: repo:Echostorm44/QuickFixMyPics2:environment:release).
+    environment: release
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,10 +51,38 @@ jobs:
           $ref = "${{ github.ref_name }}"
           if ($ref -match '^v(.+)$') { $v = $Matches[1] } else { $v = '0.0.0-dev' }
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          # Expose as an MSBuild property (env vars are read by MSBuild as global properties),
-          # so the inner `dotnet publish` of the app stamps this version into the assembly.
           "Version=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
           Write-Host "Building version $v"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Trusted Signing dlib + locate signtool
+        shell: pwsh
+        run: |
+          $ts = Join-Path $env:RUNNER_TEMP 'tsclient'
+          New-Item -ItemType Directory -Force $ts | Out-Null
+          foreach ($pkg in @('Microsoft.Trusted.Signing.Client','Microsoft.ArtifactSigning.Client')) {
+            nuget install $pkg -OutputDirectory $ts -Source https://api.nuget.org/v3/index.json -NonInteractive
+            if ($LASTEXITCODE -eq 0) { break }
+          }
+          $dlib = (Get-ChildItem $ts -Recurse -Filter 'Azure.CodeSigning.Dlib.dll' -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          if (-not $dlib) { Write-Error 'Azure.CodeSigning.Dlib.dll not found in the Trusted Signing client package.'; exit 1 }
+          $signtool = (Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter 'signtool.exe' -ErrorAction SilentlyContinue |
+                       Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (-not $signtool) { Write-Error 'signtool.exe not found.'; exit 1 }
+          # metadata json signtool /dmdf needs (account + profile).
+          $meta = Join-Path $env:RUNNER_TEMP 'trusted-signing.json'
+          "{""Endpoint"":""$env:SIGN_ENDPOINT"",""CodeSigningAccountName"":""$env:SIGN_ACCOUNT"",""CertificateProfileName"":""$env:SIGN_PROFILE""}" | Set-Content -Path $meta -Encoding ascii
+          "TS_DLIB=$dlib"        | Out-File -FilePath $env:GITHUB_ENV -Append
+          "TS_SIGNTOOL=$signtool"| Out-File -FilePath $env:GITHUB_ENV -Append
+          "TS_META=$meta"        | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "dlib: $dlib"
+          Write-Host "signtool: $signtool"
 
       - name: Install cascade CLI
         shell: pwsh
@@ -56,30 +90,36 @@ jobs:
           dotnet tool install --global Echostorm.Cascade.UI.Tools --prerelease
           "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
 
-      - name: Build installer
+      - name: Build + sign installer
         shell: pwsh
         run: |
-          cascade package --installer --project QuickFixMyPics2.csproj --configuration Release --output dist
-          if (-not (Test-Path 'dist/QuickFixMyPics2-Setup.exe')) {
-            Write-Error 'Setup exe was not produced.'; exit 1
-          }
+          # The packager signs every exe it builds (app, update shim, wizard, uninstaller, launcher).
+          cascade package --installer --project QuickFixMyPics2.csproj --configuration Release --output dist `
+            --sign-azure-endpoint $env:SIGN_ENDPOINT `
+            --sign-azure-account  $env:SIGN_ACCOUNT `
+            --sign-azure-profile  $env:SIGN_PROFILE `
+            --sign-azure-dlib     "$env:TS_DLIB" `
+            --sign-timestamp      $env:SIGN_TIMESTAMP
+          if (-not (Test-Path 'dist/QuickFixMyPics2-Setup.exe')) { Write-Error 'Setup exe was not produced.'; exit 1 }
+          # Confirm the launcher actually carries a signature.
+          $sig = Get-AuthenticodeSignature 'dist/QuickFixMyPics2-Setup.exe'
+          Write-Host "Setup.exe signature status: $($sig.Status)"
+          if ($sig.Status -ne 'Valid') { Write-Error "Setup.exe is not validly signed ($($sig.Status))."; exit 1 }
           Get-ChildItem dist
 
-      - name: Build update package + manifest
+      - name: Build + sign update package, generate manifest
         shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # required even for --dry-run's token pre-check
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # cascade publish's token pre-check (even for --dry-run)
         run: |
           $ver = "${{ steps.ver.outputs.version }}"
-          # The auto-updater downloads a full package (the app's own publish output) and swaps it
-          # into the install dir. Publish the SAME self-contained native-AOT build the installer
-          # ships, zip it, and generate the update manifest.json (+ deltas vs the prior release).
           dotnet publish QuickFixMyPics2.csproj -c Release -r win-x64 --self-contained -p:PublishAot=true -p:DebugType=none -p:DebugSymbols=false -o app-publish
+          # Sign the update payload's app exe with the same Trusted Signing cert.
+          & "$env:TS_SIGNTOOL" sign /v /fd SHA256 /tr $env:SIGN_TIMESTAMP /td SHA256 /dlib "$env:TS_DLIB" /dmdf "$env:TS_META" "app-publish\QuickFixMyPics2.exe"
+          if ($LASTEXITCODE -ne 0) { Write-Error 'Signing the update-package app exe failed.'; exit 1 }
           $zip = "dist/QuickFixMyPics2-$ver-win-x64.zip"
           if (Test-Path $zip) { Remove-Item $zip }
           Compress-Archive -Path app-publish/* -DestinationPath $zip
-          # --dry-run generates dist/manifest.json (+ deltas) WITHOUT creating its own release;
-          # the Publish step below uploads them to the single release for this tag.
           cascade publish --github Echostorm44/QuickFixMyPics2 --update-manifest --dry-run `
             --app-id 01F8E2F6-62F4-45C9-9D72-36EE16623EBB `
             --version $ver --rid win-x64 --package $zip --dist dist
@@ -99,8 +139,6 @@ jobs:
         with:
           name: Quick Fix My Pics ${{ steps.ver.outputs.version }}
           tag_name: ${{ github.ref_name }}
-          # Setup.exe (new installs) + manifest.json/package/deltas (in-app auto-update).
-          # manifest.json is served at releases/latest/download/manifest.json — the app's check URL.
           files: dist/*
           fail_on_unmatched_files: true
           generate_release_notes: true
