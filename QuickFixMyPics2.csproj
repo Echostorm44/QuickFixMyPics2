@@ -32,14 +32,9 @@
   <ItemGroup>
     <!-- Consume Cascade.UI as a real external dev would: the published NuGet package,
          not the source. SharpImage + Etch (with native binaries) + the generator/analyzers
-         + the .targets (DPI manifest, fonts) all flow in through the package. -->
-    <PackageReference Include="Echostorm.Cascade.UI" Version="0.1.0-alpha.28" />
-
-    <!-- JXL lossless recompression (byte-exact JPEG<->JXL) is newer than the published SharpImage that
-         flows in transitively via Cascade.UI, so reference the local SharpImage source directly — a direct
-         project reference wins over the transitive package for the SharpImage assembly. Reconcile at release
-         by publishing SharpImage and bumping the Cascade.UI package that bundles it, then drop this. -->
-    <ProjectReference Include="..\SharpImage\src\SharpImage\SharpImage.csproj" />
+         + the .targets (DPI manifest, fonts) all flow in through the package. alpha.29 bundles
+         SharpImage 1.0.11, which carries the JXL recompression API (JpegXlLossless). -->
+    <PackageReference Include="Echostorm.Cascade.UI" Version="0.1.0-alpha.29" />
   </ItemGroup>
 
 </Project>
