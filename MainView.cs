@@ -23,6 +23,7 @@ internal sealed class MainView : Component
         [new(OutputFormat.KeepOriginal, "Keep original format"),
         new(OutputFormat.Jpeg, "JPG"),
         new(OutputFormat.Png, "PNG"), new(OutputFormat.Webp, "WEBP"),
+        new(OutputFormat.Jxl, "JXL"),
         new(OutputFormat.Gif, "GIF"), new(OutputFormat.Bmp, "BMP"),
         new(OutputFormat.Tiff, "TIFF"), new(OutputFormat.Ico, "ICO"),
         new(OutputFormat.Heic, "HEIC"),];

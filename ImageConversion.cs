@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using SharpImage;
+using SharpImage.Formats;
 
 namespace QuickFixMyPics2;
 
@@ -18,6 +19,7 @@ internal enum OutputFormat
     Tiff,
     Ico,
     Heic,
+    Jxl,
 }
 
 /// <summary>The user's choices for a conversion run.</summary>
@@ -62,14 +64,14 @@ internal static partial class ImageConversion
         SupportedInputExtensions.Contains(Path.GetExtension(path));
 
     /// <summary>
-    /// Input extensions we can also *write* back out. A few formats decode-only (e.g. .avif, .jxl):
+    /// Input extensions we can also *write* back out. A few formats decode-only (e.g. .avif):
     /// "Keep original format" on one of those falls back to PNG so the conversion still succeeds.
     /// </summary>
     private static readonly IReadOnlySet<string> WritableExtensions = new HashSet<string>(
         StringComparer.OrdinalIgnoreCase)
     {
         ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff",
-        ".ico", ".heic", ".heif", ".tga", ".dds", ".psd", ".qoi", ".svg", ".hdr", ".exr",
+        ".ico", ".heic", ".heif", ".tga", ".dds", ".psd", ".qoi", ".svg", ".hdr", ".exr", ".jxl",
     };
 
     /// <summary>The file extension (including dot) a format writes to.</summary>
@@ -83,6 +85,7 @@ internal static partial class ImageConversion
         OutputFormat.Tiff => ".tiff",
         OutputFormat.Ico => ".ico",
         OutputFormat.Heic => ".heic",
+        OutputFormat.Jxl => ".jxl",
         _ => string.Empty,
     };
 
@@ -103,11 +106,41 @@ internal static partial class ImageConversion
                 ? Path.GetExtension(inputPath)
                 : Extension(options.Format);
 
-            // "Keep original format" on a decode-only input (e.g. AVIF/JXL — we can read them but not
-            // write them) would fail; fall back to PNG so resizing/keeping such files still works.
+            // "Keep original format" on a decode-only input (e.g. AVIF — we can read it but not
+            // write it) would fail; fall back to PNG so resizing/keeping such files still works.
             if (options.Format == OutputFormat.KeepOriginal && !WritableExtensions.Contains(targetExt))
             {
                 targetExt = ".png";
+            }
+
+            // Byte-exact JPEG -> JXL recompression: when the user asks for JXL and the source is an UNMODIFIED
+            // JPEG (no resize), recompress its DCT coefficients losslessly instead of decoding to pixels and
+            // re-encoding. The result is smaller than the JPEG and decodes back to the identical image — the
+            // highest-quality path (QFMP2 favours quality, so it uses the default effort). A source this path
+            // cannot reproduce falls through to the normal pixel pipeline (which writes a standard lossless JXL).
+            string inputExt = Path.GetExtension(inputPath);
+            bool sourceIsJpeg = inputExt.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
+                || inputExt.Equals(".jpeg", StringComparison.OrdinalIgnoreCase);
+            if (options.Format == OutputFormat.Jxl && sourceIsJpeg && !options.Resize)
+            {
+                byte[]? recompressed = TryRecompressJpegToJxl(inputPath);
+                if (recompressed is not null)
+                {
+                    tempPath = EnsureUnique(Path.Combine(directory, baseName + ".qfmp-converting" + targetExt));
+                    File.WriteAllBytes(tempPath, recompressed);
+
+                    if (options.DeleteOriginals)
+                    {
+                        File.Delete(inputPath);
+                        sourceDeleted = true;
+                    }
+
+                    string recompressedPath = EnsureUnique(Path.Combine(directory, baseName + targetExt));
+                    File.Move(tempPath, recompressedPath);
+                    tempPath = null;
+                    return new ConversionResult(inputPath, recompressedPath, null);
+                }
+                // else: fall through to the pixel pipeline, which writes a standard (real) JXL.
             }
 
             using var pipeline = ImagePipeline.Load(inputPath);
@@ -172,6 +205,25 @@ internal static partial class ImageConversion
                 catch (IOException) { }
                 catch (UnauthorizedAccessException) { }
             }
+        }
+    }
+
+    /// <summary>
+    /// Losslessly recompresses a JPEG to the JXL recompression container at the default (quality-favouring)
+    /// effort. Returns null when the source cannot be reproduced byte-exact (e.g. an atypical encoder) so the
+    /// caller can fall back to the normal pixel pipeline. Never throws.
+    /// </summary>
+    private static byte[]? TryRecompressJpegToJxl(string inputPath)
+    {
+        try
+        {
+            byte[] jpeg = File.ReadAllBytes(inputPath);
+            return JpegXlLossless.Encode(jpeg); // default effort == JpegRecompressionEffort.Balanced
+        }
+        catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException
+            or ArgumentException or IOException or InvalidDataException)
+        {
+            return null;
         }
     }
 
