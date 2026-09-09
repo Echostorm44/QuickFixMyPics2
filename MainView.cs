@@ -141,18 +141,12 @@ internal sealed class MainView : Component
     // Lucide "arrow-down-to-line" — the update affordance.
     private static readonly Icon UpdateIcon = new(["M12 17V3", "m6 11 6 6 6-6", "M19 21H5"], new Size(24, 24), 20f, "Update");
 
-    /// <summary>An in-app banner shown when a newer version is available — asks before doing anything.</summary>
+    /// <summary>An in-app banner shown when a newer version is available — asks before doing anything.
+    /// Text and actions are STACKED (not side-by-side) so the narrow window never squeezes the message into a
+    /// wrap/ellipsis or clips a button — which also kept the button's hit area intact.</summary>
     private Node UpdateBanner()
     {
-        Node[] right = updateBusy
-            ? new Node[] { new Label(updateStatus).FontSize(13).Color(TextPrimary) }
-            : new Node[]
-            {
-                new Button("Update now", () => _ = DownloadAndApplyAsync()).Height(34),
-                new Button("Later", () => { updateVersion = null; Invalidate(); }).Variant("ghost").Height(34),
-            };
-
-        return new Row(
+        var message = new Row(
             spacing: 12,
             crossAxisAlignment: CrossAxisAlignment.Center,
             children:
@@ -163,13 +157,31 @@ internal sealed class MainView : Component
                     crossAxisAlignment: CrossAxisAlignment.Start,
                     children:
                     [
-                        new Label($"Version {updateVersion} is available").FontSize(14).Color(TextPrimary),
-                        new Label(updateBusy ? "" : "Update now to get the latest fixes and features.")
+                        new Label($"Version {updateVersion} is available")
+                            .FontSize(15).Color(TextPrimary).MaxLines(1).Overflow(TextOverflow.Ellipsis),
+                        new Label("Update to get the latest fixes and features.")
                             .FontSize(12).Color(new ColorValue("#D6E9FF")).MaxLines(1).Overflow(TextOverflow.Ellipsis),
                     ]).Expand(),
-                .. right,
-            ])
-            .Padding(EdgeInsets.Symmetric(horizontal: 16, vertical: 12))
+            ]);
+
+        Node actions = updateBusy
+            ? new Row(
+                crossAxisAlignment: CrossAxisAlignment.Center,
+                children: [ new Label(updateStatus).FontSize(13).Color(TextPrimary).Expand() ])
+            : new Row(
+                spacing: 10,
+                mainAxisAlignment: MainAxisAlignment.End,
+                crossAxisAlignment: CrossAxisAlignment.Center,
+                children:
+                [
+                    new Button("Later", () => { updateVersion = null; Invalidate(); }).Variant("ghost").Height(34),
+                    new Button("Update now", () => _ = DownloadAndApplyAsync()).Height(34),
+                ]);
+
+        return new Column(
+            spacing: 12,
+            children: [ message, actions ])
+            .Padding(EdgeInsets.Symmetric(horizontal: 16, vertical: 14))
             .Background(Accent)
             .CornerRadius(12);
     }
