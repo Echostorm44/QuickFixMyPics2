@@ -122,14 +122,28 @@ internal static partial class ImageConversion
             //  - AVIF: the JPEG's own YCbCr planes are coded as they are (no YCbCr -> RGB -> YCbCr round trip),
             //    ICC / Exif / XMP kept — exactly what avifenc writes for the same file.
             // A source these paths cannot handle falls through to the normal pixel pipeline.
+            //  - A .jxl written by QuickFixMyPics 1.0.10-1.0.11 is SharpImage's private SJXL container that other
+            //    viewers cannot open. It holds the exact original JPEG, so converting it without resizing goes
+            //    through that JPEG: JXL (or "keep original") gives a standard JPEG XL of it, JPEG gives the
+            //    original JPEG bytes back, AVIF uses the JPEG path above.
             string inputExt = Path.GetExtension(inputPath);
             bool sourceIsJpeg = inputExt.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
                 || inputExt.Equals(".jpeg", StringComparison.OrdinalIgnoreCase);
-            if ((options.Format == OutputFormat.Jxl || options.Format == OutputFormat.Avif) && sourceIsJpeg && !options.Resize)
+            byte[]? legacyJpeg = options.Resize ? null : TryReadLegacySjxl(inputPath);
+            OutputFormat directFormat = options.Format;
+            if (legacyJpeg is not null && options.Format == OutputFormat.KeepOriginal)
             {
-                byte[]? recompressed = options.Format == OutputFormat.Jxl
-                    ? TryRecompressJpegToJxl(inputPath)
-                    : TryEncodeJpegToAvif(inputPath);
+                directFormat = OutputFormat.Jxl;
+            }
+
+            if ((directFormat == OutputFormat.Jxl || directFormat == OutputFormat.Avif || (legacyJpeg is not null && directFormat == OutputFormat.Jpeg))
+                && (sourceIsJpeg || legacyJpeg is not null) && !options.Resize)
+            {
+                byte[]? jpegBytes = legacyJpeg ?? TryReadAllBytes(inputPath);
+                byte[]? recompressed = jpegBytes is null ? null
+                    : directFormat == OutputFormat.Jxl ? TryRecompressJpegToJxl(jpegBytes)
+                    : directFormat == OutputFormat.Avif ? TryEncodeJpegToAvif(jpegBytes)
+                    : jpegBytes;
                 if (recompressed is not null)
                 {
                     tempPath = EnsureUnique(Path.Combine(directory, baseName + ".qfmp-converting" + targetExt));
@@ -215,19 +229,54 @@ internal static partial class ImageConversion
     }
 
     /// <summary>
-    /// Losslessly recompresses a JPEG to the JXL recompression container at the default (quality-favouring)
-    /// effort. Returns null when the source cannot be reproduced byte-exact (e.g. an atypical encoder) so the
+    /// Losslessly recompresses a JPEG into a standard JPEG XL file (libjxl's JPEG recompression, identical to
+    /// cjxl's output), which any JPEG XL viewer opens and djxl turns back into the original JPEG byte for byte.
+    /// Returns null when the source cannot be recompressed (arithmetic coding, CMYK, an atypical encoder) so the
     /// caller can fall back to the normal pixel pipeline. Never throws.
     /// </summary>
-    private static byte[]? TryRecompressJpegToJxl(string inputPath)
+    private static byte[]? TryRecompressJpegToJxl(byte[] jpeg)
     {
         try
         {
-            byte[] jpeg = File.ReadAllBytes(inputPath);
-            return JpegXlLossless.Encode(jpeg); // default effort == JpegRecompressionEffort.Balanced
+            return JpegXlLossless.Encode(jpeg); // standard JXL, self-verified to reconstruct the JPEG exactly
         }
         catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException
             or ArgumentException or IOException or InvalidDataException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The original JPEG inside a legacy SJXL file (what QuickFixMyPics 1.0.10-1.0.11 wrote as .jxl), or null
+    /// when the file is anything else. Never throws.
+    /// </summary>
+    private static byte[]? TryReadLegacySjxl(string inputPath)
+    {
+        try
+        {
+            if (!Path.GetExtension(inputPath).Equals(".jxl", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            byte[] data = File.ReadAllBytes(inputPath);
+            return JpegXlLossless.CanDecode(data) ? JpegXlLossless.Decode(data) : null;
+        }
+        catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException
+            or ArgumentException or IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static byte[]? TryReadAllBytes(string path)
+    {
+        try
+        {
+            return File.ReadAllBytes(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return null;
         }
@@ -238,11 +287,11 @@ internal static partial class ImageConversion
     /// kept, avifenc's default quality and speed). Returns null on failure so the caller can fall back to
     /// the pixel pipeline. Never throws.
     /// </summary>
-    private static byte[]? TryEncodeJpegToAvif(string inputPath)
+    private static byte[]? TryEncodeJpegToAvif(byte[] jpeg)
     {
         try
         {
-            return HeifCoder.EncodeAvifFromJpeg(File.ReadAllBytes(inputPath));
+            return HeifCoder.EncodeAvifFromJpeg(jpeg);
         }
         catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException
             or ArgumentException or IOException or InvalidDataException)
