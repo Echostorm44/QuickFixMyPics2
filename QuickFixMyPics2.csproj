@@ -32,10 +32,10 @@
   <ItemGroup>
     <!-- Consume Cascade.UI as a real external dev would: the published NuGet package,
          not the source. SharpImage + Etch (with native binaries) + the generator/analyzers
-         + the .targets (DPI manifest, fonts) all flow in through the package. alpha.36 bundles
-         SharpImage 1.0.12: JXL recompression (JpegXlLossless), AVIF from JPEG planes
+         + the .targets (DPI manifest, fonts) all flow in through the package. alpha.42 bundles
+         SharpImage 1.0.14: JXL recompression (JpegXlLossless), AVIF from JPEG planes
          (HeifCoder.EncodeAvifFromJpeg), and the AV1 encoder's SSE paths for CPUs without AVX2. -->
-    <PackageReference Include="Echostorm.Cascade.UI" Version="0.1.0-alpha.36" />
+    <PackageReference Include="Echostorm.Cascade.UI" Version="0.1.0-alpha.42" />
   </ItemGroup>
 
 </Project>
