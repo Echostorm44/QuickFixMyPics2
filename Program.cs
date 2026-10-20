@@ -1,20 +1,20 @@
 using Cascade.UI;
 using Cascade.UI.Backend.Etch;
 using Cascade.UI.Installer.Update;   // Updater, UpdateConfig, UpdateCheckResult
-using Cascade.UI.Updater.Core;       // UpdateBootstrap
 using QuickFixMyPics2;
 
 // ── Auto-update ─────────────────────────────────────────────────────────────
 // Configure the updater so the app can offer updates from GitHub Releases. We do NOT
 // apply anything silently: MainView checks in the background and, if a newer version
 // exists, shows an in-app banner asking the user to update (see MainView.CheckForUpdate).
-// DetectCrashAndRollback is the only automatic step — it reverts a *consented* update
-// that failed to reach a healthy launch. All best-effort: never block app startup.
+// The app's only part in crash-rollback is Updater.MarkHealthy() once it is up (MainView).
+// The launch marker and the crash check belong to the update shim (cascade-update.exe):
+// calling UpdateBootstrap.DetectCrashAndRollback here found the marker the shim had just
+// written for THIS launch and rolled every update straight back out (Cascade INSTALL-002).
+// All best-effort: never block app startup.
 try
 {
     string installDir = AppContext.BaseDirectory;
-    UpdateBootstrap.DetectCrashAndRollback(installDir);
-    UpdateBootstrap.BeginLaunch(installDir);
 
     string appVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version is { } v
         ? $"{v.Major}.{v.Minor}.{v.Build}"
