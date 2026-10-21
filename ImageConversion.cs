@@ -121,11 +121,12 @@ internal static partial class ImageConversion
             //    uses the default effort).
             //  - AVIF: the JPEG's own YCbCr planes are coded as they are (no YCbCr -> RGB -> YCbCr round trip),
             //    ICC / Exif / XMP kept — exactly what avifenc writes for the same file.
+            //  - HEIC: the same for HEIC — exactly what heif-enc writes for the same file.
             // A source these paths cannot handle falls through to the normal pixel pipeline.
             //  - A .jxl written by QuickFixMyPics 1.0.10-1.0.11 is SharpImage's private SJXL container that other
             //    viewers cannot open. It holds the exact original JPEG, so converting it without resizing goes
             //    through that JPEG: JXL (or "keep original") gives a standard JPEG XL of it, JPEG gives the
-            //    original JPEG bytes back, AVIF uses the JPEG path above.
+            //    original JPEG bytes back, AVIF / HEIC use the JPEG paths above.
             string inputExt = Path.GetExtension(inputPath);
             bool sourceIsJpeg = inputExt.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
                 || inputExt.Equals(".jpeg", StringComparison.OrdinalIgnoreCase);
@@ -136,13 +137,15 @@ internal static partial class ImageConversion
                 directFormat = OutputFormat.Jxl;
             }
 
-            if ((directFormat == OutputFormat.Jxl || directFormat == OutputFormat.Avif || (legacyJpeg is not null && directFormat == OutputFormat.Jpeg))
+            if ((directFormat == OutputFormat.Jxl || directFormat == OutputFormat.Avif || directFormat == OutputFormat.Heic
+                    || (legacyJpeg is not null && directFormat == OutputFormat.Jpeg))
                 && (sourceIsJpeg || legacyJpeg is not null) && !options.Resize)
             {
                 byte[]? jpegBytes = legacyJpeg ?? TryReadAllBytes(inputPath);
                 byte[]? recompressed = jpegBytes is null ? null
                     : directFormat == OutputFormat.Jxl ? TryRecompressJpegToJxl(jpegBytes)
                     : directFormat == OutputFormat.Avif ? TryEncodeJpegToAvif(jpegBytes)
+                    : directFormat == OutputFormat.Heic ? TryEncodeJpegToHeic(jpegBytes)
                     : jpegBytes;
                 if (recompressed is not null)
                 {
@@ -292,6 +295,24 @@ internal static partial class ImageConversion
         try
         {
             return HeifCoder.EncodeAvifFromJpeg(jpeg);
+        }
+        catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException
+            or ArgumentException or IOException or InvalidDataException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Encodes a JPEG as HEIC the way heif-enc reads JPEG input (its YCbCr planes coded directly, metadata
+    /// kept, heif-enc's default quality). Returns null on failure so the caller can fall back to the pixel
+    /// pipeline. Never throws.
+    /// </summary>
+    private static byte[]? TryEncodeJpegToHeic(byte[] jpeg)
+    {
+        try
+        {
+            return HeifCoder.EncodeHeicFromJpeg(jpeg);
         }
         catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException
             or ArgumentException or IOException or InvalidDataException)

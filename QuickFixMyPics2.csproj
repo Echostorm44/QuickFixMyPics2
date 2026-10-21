@@ -35,7 +35,7 @@
          + the .targets (DPI manifest, fonts) all flow in through the package. alpha.42 bundles
          SharpImage 1.0.14: JXL recompression (JpegXlLossless), AVIF from JPEG planes
          (HeifCoder.EncodeAvifFromJpeg), and the AV1 encoder's SSE paths for CPUs without AVX2. -->
-    <PackageReference Include="Echostorm.Cascade.UI" Version="0.1.0-alpha.43" />
+    <PackageReference Include="Echostorm.Cascade.UI" Version="0.1.0-alpha.44" />
   </ItemGroup>
 
 </Project>
