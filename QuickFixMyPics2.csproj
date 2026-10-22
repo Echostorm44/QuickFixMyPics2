@@ -25,6 +25,8 @@
          this project, and a self-contained exe cannot reference a non-self-contained one
          (NETSDK1150), so this must stay self-contained in Release. -->
     <PublishAot Condition="'$(Configuration)' == 'Release'">true</PublishAot>
+    <!-- The codecs' hot loops (HEIC / AVIF / JXL encoders) gain a few percent from speed-over-size AOT codegen. -->
+    <OptimizationPreference Condition="'$(Configuration)' == 'Release'">Speed</OptimizationPreference>
     <InvariantGlobalization>true</InvariantGlobalization>
     <StripSymbols>true</StripSymbols>
   </PropertyGroup>
@@ -32,10 +34,9 @@
   <ItemGroup>
     <!-- Consume Cascade.UI as a real external dev would: the published NuGet package,
          not the source. SharpImage + Etch (with native binaries) + the generator/analyzers
-         + the .targets (DPI manifest, fonts) all flow in through the package. alpha.42 bundles
-         SharpImage 1.0.14: JXL recompression (JpegXlLossless), AVIF from JPEG planes
-         (HeifCoder.EncodeAvifFromJpeg), and the AV1 encoder's SSE paths for CPUs without AVX2. -->
-    <PackageReference Include="Echostorm.Cascade.UI" Version="0.1.0-alpha.44" />
+         + the .targets (DPI manifest, fonts) all flow in through the package (which pins the
+         SharpImage version). -->
+    <PackageReference Include="Echostorm.Cascade.UI" Version="0.1.0-alpha.45" />
   </ItemGroup>
 
 </Project>
