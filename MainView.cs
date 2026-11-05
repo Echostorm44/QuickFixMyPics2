@@ -266,14 +266,14 @@ internal sealed class MainView : Component
         return new Row(
             spacing: 12,
             crossAxisAlignment: CrossAxisAlignment.Center,
-            children: [ new Image(path).Size(40, 40).Fit(ImageFit.Cover).CornerRadius(8), new Column(
+            children: [ new Image(path).Size(40, 40).Fit(ImageFit.Cover).CornerRadius(8).AccessibleLabel(""), new Column(
                     spacing: 2,
                     crossAxisAlignment: CrossAxisAlignment.Start,
                     children:[ new Label(IOPath.GetFileName(path))
                             .FontSize(14).Color(failed ? Danger : TextPrimary)
                             .MaxLines(1).Overflow(TextOverflow.Ellipsis), new Label(failed ? "Couldn't convert" : folder)
                             .FontSize(11).Color(failed ? Danger : TextSecondary)
-                            .MaxLines(1).Overflow(TextOverflow.Ellipsis), ]).Expand(), new IconButton(CloseIcon, () => RemoveFile(path)), ])
+                            .MaxLines(1).Overflow(TextOverflow.Ellipsis), ]).Expand(), new IconButton(CloseIcon, () => RemoveFile(path)).AccessibleLabel("Remove"), ])
             .Padding(EdgeInsets.Symmetric(horizontal: 10, vertical: 8))
             .Background(SurfaceRaised)
             .CornerRadius(10);
