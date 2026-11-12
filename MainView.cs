@@ -203,18 +203,32 @@ internal sealed class MainView : Component
     private static readonly Icon PhotoIcon = new(["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M11 9a2 2 0 1 1-4 0 2 2 0 0 1 4 0z", "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21",],
         new Size(24, 24), 24f, "Images");
 
+    // The drop zone takes the room the options leave; when the update banner and the resize row
+    // both show, that is too short for the icon, so the icon goes rather than the button spilling out.
+    private const float DropZoneRoomForIcon = 180f;
+
     private Node EmptyDropZone() =>
-        new Center(
-            new Column(
-                spacing: 16,
+        new ContainerQuery(info =>
+        {
+            bool roomForIcon = info.Height <= 0f || info.Height >= DropZoneRoomForIcon;
+            var children = new List<Node>();
+            if (roomForIcon)
+            {
+                children.Add(new IconView(PhotoIcon, size: 46).Color(new ColorValue("#55555A")));
+            }
+            children.Add(new Column(
+                spacing: 6,
                 crossAxisAlignment: CrossAxisAlignment.Center,
-                children: [ new IconView(PhotoIcon, size: 46).Color(new ColorValue("#55555A")), new Column(
-                        spacing: 6,
-                        crossAxisAlignment: CrossAxisAlignment.Center,
-                        children:[ new Label("Drop images here")
-                                .FontSize(18).Color(TextPrimary), new Label("PNG · JPG · WEBP · HEIC and more")
-                                .FontSize(13).Color(TextSecondary), ]), new Button("Add Images", () => _ = AddViaPickerAsync())
-                        .Margin(0, 6), ]));
+                children:[ new Label("Drop images here")
+                        .FontSize(18).Color(TextPrimary), new Label("PNG · JPG · WEBP · HEIC and more")
+                        .FontSize(13).Color(TextSecondary), ]));
+            children.Add(new Button("Add Images", () => _ = AddViaPickerAsync()).Margin(0, roomForIcon ? 6 : 0));
+            return new Center(
+                new Column(
+                    spacing: roomForIcon ? 16 : 10,
+                    crossAxisAlignment: CrossAxisAlignment.Center,
+                    children: [.. children]));
+        });
 
     // Lucide "x" — used as the per-row remove affordance.
     private static readonly Icon CloseIcon = new(["M18 6 6 18", "m6 6 12 12"], new Size(24, 24), 16f, "Remove");
@@ -308,9 +322,9 @@ internal sealed class MainView : Component
                 crossAxisAlignment: CrossAxisAlignment.Center,
                 children: [ new Label("Fit size").FontSize(14).Color(TextSecondary).Expand(), new NumberInput<int>(
                         Bind(maxWidth, v => maxWidth = v),
-                        min: 1, max: 20000, step: 1, format: "0").Width(90), new Label("×").FontSize(14).Color(TextSecondary), new NumberInput<int>(
+                        min: 1, max: 20000, step: 1, format: "0").Width(120), new Label("×").FontSize(14).Color(TextSecondary), new NumberInput<int>(
                         Bind(maxHeight, v => maxHeight = v),
-                        min: 1, max: 20000, step: 1, format: "0").Width(90), new Label("px").FontSize(13).Color(TextSecondary), ]));
+                        min: 1, max: 20000, step: 1, format: "0").Width(120), new Label("px").FontSize(13).Color(TextSecondary), ]));
         }
 
         children.Add(Divider());
